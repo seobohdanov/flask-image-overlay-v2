@@ -2,3 +2,4 @@ Flask==2.1.1
 Werkzeug==2.0.3
 opencv-python==4.5.5.64
 Pillow==9.0.1
+gunicorn
