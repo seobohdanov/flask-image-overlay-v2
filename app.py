@@ -2,7 +2,6 @@ from flask import Flask, request, send_file
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
-import numpy as np
 
 app = Flask(__name__)
 
@@ -14,7 +13,7 @@ def overlay_text():
     # Загрузка изображения по URL
     if image_url:
         response = requests.get(image_url)
-        image = Image.open(io.BytesIO(response.content))
+        image = Image.open(io.BytysIO(response.content))
     else:
         file = request.files['image']
         image = Image.open(file)
@@ -24,13 +23,12 @@ def overlay_text():
     # Получаем размеры изображения
     W, H = image.size
 
-    # Определяем размеры и позицию внутренней рамки (примерно 60% от общего размера)
-    frame_margin_x = W * 0.2  # 20% отступ слева и справа
-    frame_margin_y = H * 0.15  # 15% отступ сверху и снизу
+    # Определяем размеры и позицию внутренней рамки
+    frame_margin_x = W * 0.2
+    frame_margin_y = H * 0.15
     frame_width = W - (2 * frame_margin_x)
     frame_height = H - (2 * frame_margin_y)
 
-    # Функция для подбора оптимального размера шрифта с учетом рамки
     def get_optimal_font_size(text, max_width, max_height):
         font_size = 10
         font = None
@@ -45,7 +43,6 @@ def overlay_text():
                 
             text_width, text_height = draw.textsize(text, font=font)
             
-            # Используем 90% от размера рамки для текста
             if text_width > max_width * 0.9 or text_height > max_height * 0.9:
                 font_size -= 10
                 try:
@@ -58,52 +55,52 @@ def overlay_text():
             
         return font, text_width, text_height
 
-    # Получаем оптимальный размер шрифта для рамки
+    # Получаем оптимальный размер шрифта
     font, text_width, text_height = get_optimal_font_size(text, frame_width, frame_height)
 
-    # Цвета в стиле изображения
-    stroke_color = "#8B4513"  # Темно-коричневый
-    text_color = "#D2691E"    # Светло-коричневый
-    shadow_color = "#2F1810"  # Очень темный коричневый
+    # Новые цвета и эффекты
+    main_color = "#FFD700"      # Золотой цвет для основного текста
+    stroke_color = "#8B4513"    # Темно-коричневый для обводки
+    glow_color = "#FFA500"      # Оранжевый для внутреннего свечения
+    shadow_color = "#000000"    # Черный для тени
 
-    def draw_text_with_blurred_shadow(draw, text, position, font, shadow_offset, shadow_color, text_color, stroke_width, stroke_fill):
+    def draw_text_with_effects(draw, text, position, font):
         x, y = position
+        
+        # Создаем несколько слоев свечения
+        for offset in range(15, 0, -3):
+            glow_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            glow_draw = ImageDraw.Draw(glow_layer)
+            glow_draw.text((x, y), text, font=font, fill=glow_color)
+            glow_blur = glow_layer.filter(ImageFilter.GaussianBlur(offset))
+            image.paste(glow_blur, (0, 0), glow_blur)
 
-        # Создаем слой для тени
+        # Слой для тени
         shadow_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
         shadow_draw = ImageDraw.Draw(shadow_layer)
+        shadow_draw.text((x + 5, y + 5), text, font=font, fill=shadow_color)
+        shadow_blur = shadow_layer.filter(ImageFilter.GaussianBlur(10))
+        image.paste(shadow_blur, (0, 0), shadow_blur)
 
-        # Рисуем тень с смещением
-        shadow_draw.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=shadow_color)
+        # Рисуем обводку
+        for offset in [(1,1), (-1,-1), (-1,1), (1,-1)]:
+            draw.text((x + offset[0], y + offset[1]), text, font=font, fill=stroke_color)
 
-        # Размытие слоя с тенью
-        blurred_shadow = shadow_layer.filter(ImageFilter.GaussianBlur(12))  # Увеличенное размытие
+        # Рисуем основной текст с дополнительной обводкой
+        draw.text((x, y), text, font=font, fill=main_color, stroke_width=2, stroke_fill=stroke_color)
 
-        # Наложение тени на основное изображение
-        image.paste(blurred_shadow, (0, 0), blurred_shadow)
-
-        # Рисуем основной текст поверх размытой тени
-        draw.text(position, text, font=font, fill=text_color, stroke_width=stroke_width, stroke_fill=stroke_fill)
-
-    # Вычисляем позицию для центрирования текста в рамке
+    # Вычисляем позицию для центрирования текста
     text_position = (
         frame_margin_x + (frame_width - text_width) / 2,
         frame_margin_y + (frame_height - text_height) / 2
     )
 
-    # Рисуем текст с тенью
-    draw_text_with_blurred_shadow(
-        draw, text, text_position, font,
-        shadow_offset=8,        # Увеличенное смещение тени
-        shadow_color=shadow_color,
-        text_color=text_color,
-        stroke_width=3,         # Уменьшенная толщина обводки
-        stroke_fill=stroke_color
-    )
+    # Применяем все эффекты
+    draw_text_with_effects(draw, text, text_position, font)
 
-    # Сохранение результата во временный файл
+    # Сохранение результата
     img_io = io.BytesIO()
-    image.save(img_io, 'JPEG', quality=95)  # Увеличенное качество
+    image.save(img_io, 'JPEG', quality=95)
     img_io.seek(0)
 
     return send_file(img_io, mimetype='image/jpeg')
