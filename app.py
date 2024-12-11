@@ -2,6 +2,7 @@ from flask import Flask, request, send_file
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
+import math
 
 app = Flask(__name__)
 
@@ -10,7 +11,6 @@ def overlay_text():
     image_url = request.form.get('image_url')
     text = request.form.get('text')
 
-    # Загрузка изображения по URL
     if image_url:
         response = requests.get(image_url)
         image = Image.open(io.BytesIO(response.content))
@@ -18,14 +18,10 @@ def overlay_text():
         file = request.files['image']
         image = Image.open(file)
 
-    # Конвертируем изображение в RGBA
     image = image.convert('RGBA')
     draw = ImageDraw.Draw(image)
 
-    # Получаем размеры изображения
     W, H = image.size
-
-    # Определяем размеры и позицию внутренней рамки
     frame_margin_x = W * 0.2
     frame_margin_y = H * 0.15
     frame_width = W - (2 * frame_margin_x)
@@ -47,7 +43,7 @@ def overlay_text():
             
             if text_width > max_width * 0.9 or text_height > max_height * 0.9:
                 font_size -= 10
-                final_size = int(font_size * 0.97)
+                final_size = int(font_size * 0.90)
                 try:
                     font = ImageFont.truetype("GreatVibes-Regular.ttf", final_size)
                 except IOError:
@@ -58,88 +54,110 @@ def overlay_text():
             
         return font, text_width, text_height
 
-    def create_realistic_emboss(draw, text, position, font):
+    def create_metallic_emboss(draw, text, position, font):
         x, y = position
         
-        # 1. Создаем эффект углубления (темная область)
-        depression_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        depression_draw = ImageDraw.Draw(depression_layer)
-        
-        # Многослойная тень для глубины
-        for offset in range(3):
-            depression_draw.text(
+        # 1. Глубокий эффект вдавленности (пресс)
+        for depth in range(8, 0, -1):
+            press_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            press_draw = ImageDraw.Draw(press_layer)
+            
+            # Создаем темную область вдавленности
+            offset = depth * 0.5
+            press_draw.text(
                 (x + offset, y + offset),
                 text,
                 font=font,
-                fill=(0, 0, 0, 40)  # Очень прозрачный черный
+                fill=(0, 0, 0, 25 + depth * 5)  # Увеличиваем непрозрачность с глубиной
             )
-        
-        # Размываем для мягкости
-        depression_blur = depression_layer.filter(ImageFilter.GaussianBlur(2))
-        image.paste(depression_blur, (0, 0), depression_blur)
+            
+            # Размываем для реалистичности
+            press_blur = press_layer.filter(ImageFilter.GaussianBlur(depth))
+            image.paste(press_blur, (0, 0), press_blur)
 
-        # 2. Создаем эффект приподнятых краев вокруг букв
-        edge_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        edge_draw = ImageDraw.Draw(edge_layer)
-        
-        # Верхний и левый края (светлые)
-        for i in range(2):
-            edge_draw.text(
-                (x - i, y - i),
+        # 2. Металлический золотой эффект
+        # Базовые цвета для золота
+        gold_colors = [
+            (255, 215, 0, 180),     # Яркое золото
+            (238, 198, 0, 180),     # Темное золото
+            (255, 223, 0, 180),     # Светлое золото
+            (218, 165, 32, 180),    # Золотисто-коричневый
+            (255, 240, 110, 180),   # Светлый блик
+        ]
+
+        # Создаем металлический эффект с бликами
+        for i, color in enumerate(gold_colors):
+            metallic_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            metallic_draw = ImageDraw.Draw(metallic_layer)
+            
+            # Смещение для создания эффекта объема
+            offset_x = math.sin(i * math.pi / 4) * 2
+            offset_y = math.cos(i * math.pi / 4) * 2
+            
+            metallic_draw.text(
+                (x + offset_x, y + offset_y),
                 text,
                 font=font,
-                fill=(255, 255, 255, 60)  # Полупрозрачный белый
+                fill=color
             )
-        
-        # Размываем края
-        edge_blur = edge_layer.filter(ImageFilter.GaussianBlur(1))
-        image.paste(edge_blur, (0, 0), edge_blur)
+            
+            # Применяем разное размытие для разных слоев
+            blur_radius = 0.5 if i == len(gold_colors)-1 else 1.5
+            metallic_blur = metallic_layer.filter(ImageFilter.GaussianBlur(blur_radius))
+            image.paste(metallic_blur, (0, 0), metallic_blur)
 
-        # 3. Основной текст (углубленный)
-        main_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        main_draw = ImageDraw.Draw(main_layer)
-        
-        # Рисуем основной текст с золотым оттенком
-        main_draw.text(
-            (x, y),
+        # 3. Добавляем яркие блики
+        highlight_positions = [(0.8, 0.8), (-0.8, -0.8), (0.8, -0.8), (-0.8, 0.8)]
+        for pos in highlight_positions:
+            highlight_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            highlight_draw = ImageDraw.Draw(highlight_layer)
+            
+            highlight_draw.text(
+                (x + pos[0], y + pos[1]),
+                text,
+                font=font,
+                fill=(255, 255, 255, 100)
+            )
+            
+            highlight_blur = highlight_layer.filter(ImageFilter.GaussianBlur(0.5))
+            image.paste(highlight_blur, (0, 0), highlight_blur)
+
+        # 4. Добавляем эффект деформации кожи вокруг букв
+        for radius in range(10, 0, -2):
+            leather_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            leather_draw = ImageDraw.Draw(leather_layer)
+            
+            leather_draw.text(
+                (x, y),
+                text,
+                font=font,
+                fill=(0, 0, 0, 5)  # Очень прозрачный черный
+            )
+            
+            leather_blur = leather_layer.filter(ImageFilter.GaussianBlur(radius))
+            image.paste(leather_blur, (0, 0), leather_blur)
+
+        # 5. Финальный блестящий акцент
+        shine_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        shine_draw = ImageDraw.Draw(shine_layer)
+        shine_draw.text(
+            (x - 1, y - 1),
             text,
             font=font,
-            fill=(218, 165, 32, 180)  # Золотой цвет с прозрачностью
+            fill=(255, 255, 255, 50)
         )
-        
-        # 4. Добавляем текстуру "примятой кожи"
-        texture_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        texture_draw = ImageDraw.Draw(texture_layer)
-        
-        # Создаем эффект деформации вокруг букв
-        for offset in [(1,1), (-1,-1), (1,-1), (-1,1)]:
-            texture_draw.text(
-                (x + offset[0], y + offset[1]),
-                text,
-                font=font,
-                fill=(0, 0, 0, 20)  # Очень прозрачный черный
-            )
-        
-        # Размываем текстуру
-        texture_blur = texture_layer.filter(ImageFilter.GaussianBlur(3))
-        image.paste(texture_blur, (0, 0), texture_blur)
-        
-        # Накладываем основной текст
-        image.paste(main_layer, (0, 0), main_layer)
+        shine_blur = shine_layer.filter(ImageFilter.GaussianBlur(0.3))
+        image.paste(shine_blur, (0, 0), shine_blur)
 
-    # Получаем оптимальный размер шрифта
     font, text_width, text_height = get_optimal_font_size(text, frame_width, frame_height)
 
-    # Вычисляем позицию для центрирования текста
     text_position = (
         frame_margin_x + (frame_width - text_width) / 2,
         frame_margin_y + (frame_height - text_height) / 2
     )
 
-    # Применяем эффект тиснения
-    create_realistic_emboss(draw, text, text_position, font)
+    create_metallic_emboss(draw, text, text_position, font)
 
-    # Сохранение результата
     img_io = io.BytesIO()
     image = image.convert('RGB')
     image.save(img_io, 'JPEG', quality=95)
