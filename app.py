@@ -142,13 +142,32 @@ def overlay_text():
     # Применяем эффекты
     create_metallic_effect(draw, text, (x, y), font)
 
-    # Сохраняем результат
+    # Оптимизированное сохранение
     img_io = io.BytesIO()
+    
+    # Конвертируем в RGB
     image = image.convert('RGB')
-    image.save(img_io, 'JPEG', quality=95)
+    
+    # Сохраняем с оптимизациями
+    image.save(
+        img_io, 
+        'JPEG', 
+        quality=85,
+        optimize=True,
+        progressive=True
+    )
+    
     img_io.seek(0)
-
-    return send_file(img_io, mimetype='image/jpeg')
+    
+    # Добавляем заголовки для кэширования
+    response = send_file(
+        img_io,
+        mimetype='image/jpeg',
+        max_age=31536000
+    )
+    response.headers['Cache-Control'] = 'public, max-age=31536000'
+    
+    return response
 
 if __name__ == "__main__":
     app.run(debug=True)
