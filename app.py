@@ -13,11 +13,13 @@ def overlay_text():
     # Загрузка изображения по URL
     if image_url:
         response = requests.get(image_url)
-        image = Image.open(io.BytesIO(response.content))  # Исправлено BytysIO на BytesIO
+        image = Image.open(io.BytesIO(response.content))
     else:
         file = request.files['image']
         image = Image.open(file)
 
+    # Конвертируем изображение в RGBA
+    image = image.convert('RGBA')
     draw = ImageDraw.Draw(image)
 
     # Получаем размеры изображения
@@ -45,8 +47,9 @@ def overlay_text():
             
             if text_width > max_width * 0.9 or text_height > max_height * 0.9:
                 font_size -= 10
+                final_size = int(font_size * 0.97)
                 try:
-                    font = ImageFont.truetype("GreatVibes-Regular.ttf", font_size)
+                    font = ImageFont.truetype("GreatVibes-Regular.ttf", final_size)
                 except IOError:
                     font = ImageFont.load_default()
                 break
@@ -55,39 +58,77 @@ def overlay_text():
             
         return font, text_width, text_height
 
-    # Получаем оптимальный размер шрифта
-    font, text_width, text_height = get_optimal_font_size(text, frame_width, frame_height)
-
-    # Новые цвета и эффекты
-    main_color = "#FFD700"      # Золотой цвет для основного текста
-    stroke_color = "#8B4513"    # Темно-коричневый для обводки
-    glow_color = "#FFA500"      # Оранжевый для внутреннего свечения
-    shadow_color = "#000000"    # Черный для тени
-
-    def draw_text_with_effects(draw, text, position, font):
+    def create_realistic_emboss(draw, text, position, font):
         x, y = position
         
-        # Создаем несколько слоев свечения
-        for offset in range(15, 0, -3):
-            glow_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-            glow_draw = ImageDraw.Draw(glow_layer)
-            glow_draw.text((x, y), text, font=font, fill=glow_color)
-            glow_blur = glow_layer.filter(ImageFilter.GaussianBlur(offset))
-            image.paste(glow_blur, (0, 0), glow_blur)
+        # 1. Создаем эффект углубления (темная область)
+        depression_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        depression_draw = ImageDraw.Draw(depression_layer)
+        
+        # Многослойная тень для глубины
+        for offset in range(3):
+            depression_draw.text(
+                (x + offset, y + offset),
+                text,
+                font=font,
+                fill=(0, 0, 0, 40)  # Очень прозрачный черный
+            )
+        
+        # Размываем для мягкости
+        depression_blur = depression_layer.filter(ImageFilter.GaussianBlur(2))
+        image.paste(depression_blur, (0, 0), depression_blur)
 
-        # Слой для тени
-        shadow_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        shadow_draw = ImageDraw.Draw(shadow_layer)
-        shadow_draw.text((x + 5, y + 5), text, font=font, fill=shadow_color)
-        shadow_blur = shadow_layer.filter(ImageFilter.GaussianBlur(10))
-        image.paste(shadow_blur, (0, 0), shadow_blur)
+        # 2. Создаем эффект приподнятых краев вокруг букв
+        edge_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        edge_draw = ImageDraw.Draw(edge_layer)
+        
+        # Верхний и левый края (светлые)
+        for i in range(2):
+            edge_draw.text(
+                (x - i, y - i),
+                text,
+                font=font,
+                fill=(255, 255, 255, 60)  # Полупрозрачный белый
+            )
+        
+        # Размываем края
+        edge_blur = edge_layer.filter(ImageFilter.GaussianBlur(1))
+        image.paste(edge_blur, (0, 0), edge_blur)
 
-        # Рисуем обводку
-        for offset in [(1,1), (-1,-1), (-1,1), (1,-1)]:
-            draw.text((x + offset[0], y + offset[1]), text, font=font, fill=stroke_color)
+        # 3. Основной текст (углубленный)
+        main_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        main_draw = ImageDraw.Draw(main_layer)
+        
+        # Рисуем основной текст с золотым оттенком
+        main_draw.text(
+            (x, y),
+            text,
+            font=font,
+            fill=(218, 165, 32, 180)  # Золотой цвет с прозрачностью
+        )
+        
+        # 4. Добавляем текстуру "примятой кожи"
+        texture_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        texture_draw = ImageDraw.Draw(texture_layer)
+        
+        # Создаем эффект деформации вокруг букв
+        for offset in [(1,1), (-1,-1), (1,-1), (-1,1)]:
+            texture_draw.text(
+                (x + offset[0], y + offset[1]),
+                text,
+                font=font,
+                fill=(0, 0, 0, 20)  # Очень прозрачный черный
+            )
+        
+        # Размываем текстуру
+        texture_blur = texture_layer.filter(ImageFilter.GaussianBlur(3))
+        image.paste(texture_blur, (0, 0), texture_blur)
+        
+        # Накладываем основной текст
+        image.paste(main_layer, (0, 0), main_layer)
 
-        # Рисуем основной текст с дополнительной обводкой
-        draw.text((x, y), text, font=font, fill=main_color, stroke_width=2, stroke_fill=stroke_color)
+    # Получаем оптимальный размер шрифта
+    font, text_width, text_height = get_optimal_font_size(text, frame_width, frame_height)
 
     # Вычисляем позицию для центрирования текста
     text_position = (
@@ -95,11 +136,12 @@ def overlay_text():
         frame_margin_y + (frame_height - text_height) / 2
     )
 
-    # Применяем все эффекты
-    draw_text_with_effects(draw, text, text_position, font)
+    # Применяем эффект тиснения
+    create_realistic_emboss(draw, text, text_position, font)
 
     # Сохранение результата
     img_io = io.BytesIO()
+    image = image.convert('RGB')
     image.save(img_io, 'JPEG', quality=95)
     img_io.seek(0)
 
