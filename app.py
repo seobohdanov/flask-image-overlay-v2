@@ -2,6 +2,7 @@ from flask import Flask, request, send_file
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
+import numpy as np
 
 app = Flask(__name__)
 
@@ -23,14 +24,19 @@ def overlay_text():
     # Получаем размеры изображения
     W, H = image.size
 
-    # Функция для подбора оптимального размера шрифта
+    # Определяем размеры и позицию внутренней рамки (примерно 60% от общего размера)
+    frame_margin_x = W * 0.2  # 20% отступ слева и справа
+    frame_margin_y = H * 0.15  # 15% отступ сверху и снизу
+    frame_width = W - (2 * frame_margin_x)
+    frame_height = H - (2 * frame_margin_y)
+
+    # Функция для подбора оптимального размера шрифта с учетом рамки
     def get_optimal_font_size(text, max_width, max_height):
-        font_size = 10  # Начальный размер шрифта
+        font_size = 10
         font = None
         text_width = 0
         text_height = 0
         
-        # Увеличиваем размер шрифта, пока текст не станет слишком большим
         while True:
             try:
                 font = ImageFont.truetype("GreatVibes-Regular.ttf", font_size)
@@ -39,9 +45,9 @@ def overlay_text():
                 
             text_width, text_height = draw.textsize(text, font=font)
             
-            # Оставляем небольшой отступ от краев (80% от размера изображения)
-            if text_width > max_width * 0.8 or text_height > max_height * 0.8:
-                font_size -= 10  # Возвращаемся к последнему подходящему размеру
+            # Используем 90% от размера рамки для текста
+            if text_width > max_width * 0.9 or text_height > max_height * 0.9:
+                font_size -= 10
                 try:
                     font = ImageFont.truetype("GreatVibes-Regular.ttf", font_size)
                 except IOError:
@@ -52,13 +58,13 @@ def overlay_text():
             
         return font, text_width, text_height
 
-    # Получаем оптимальный размер шрифта
-    font, text_width, text_height = get_optimal_font_size(text, W, H)
+    # Получаем оптимальный размер шрифта для рамки
+    font, text_width, text_height = get_optimal_font_size(text, frame_width, frame_height)
 
-    # Цвета
-    stroke_color = "#a3716f"
-    text_color = "white"
-    shadow_color = "black"
+    # Цвета в стиле изображения
+    stroke_color = "#8B4513"  # Темно-коричневый
+    text_color = "#D2691E"    # Светло-коричневый
+    shadow_color = "#2F1810"  # Очень темный коричневый
 
     def draw_text_with_blurred_shadow(draw, text, position, font, shadow_offset, shadow_color, text_color, stroke_width, stroke_fill):
         x, y = position
@@ -71,7 +77,7 @@ def overlay_text():
         shadow_draw.text((x + shadow_offset, y + shadow_offset), text, font=font, fill=shadow_color)
 
         # Размытие слоя с тенью
-        blurred_shadow = shadow_layer.filter(ImageFilter.GaussianBlur(10))
+        blurred_shadow = shadow_layer.filter(ImageFilter.GaussianBlur(12))  # Увеличенное размытие
 
         # Наложение тени на основное изображение
         image.paste(blurred_shadow, (0, 0), blurred_shadow)
@@ -79,22 +85,25 @@ def overlay_text():
         # Рисуем основной текст поверх размытой тени
         draw.text(position, text, font=font, fill=text_color, stroke_width=stroke_width, stroke_fill=stroke_fill)
 
-    # Вычисляем позицию для центрирования текста
-    text_position = ((W - text_width) / 2, (H - text_height) / 2)
+    # Вычисляем позицию для центрирования текста в рамке
+    text_position = (
+        frame_margin_x + (frame_width - text_width) / 2,
+        frame_margin_y + (frame_height - text_height) / 2
+    )
 
     # Рисуем текст с тенью
     draw_text_with_blurred_shadow(
         draw, text, text_position, font,
-        shadow_offset=7,
+        shadow_offset=8,        # Увеличенное смещение тени
         shadow_color=shadow_color,
         text_color=text_color,
-        stroke_width=7,
+        stroke_width=3,         # Уменьшенная толщина обводки
         stroke_fill=stroke_color
     )
 
     # Сохранение результата во временный файл
     img_io = io.BytesIO()
-    image.save(img_io, 'JPEG')
+    image.save(img_io, 'JPEG', quality=95)  # Увеличенное качество
     img_io.seek(0)
 
     return send_file(img_io, mimetype='image/jpeg')
