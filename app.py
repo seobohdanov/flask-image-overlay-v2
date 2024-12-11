@@ -9,7 +9,6 @@ app = Flask(__name__)
 def overlay_text():
     image_url = request.form.get('image_url')
     text = request.form.get('text')
-    date = request.form.get('date')
 
     # Загрузка изображения по URL
     if image_url:
@@ -21,20 +20,46 @@ def overlay_text():
 
     draw = ImageDraw.Draw(image)
 
-    # Настройка шрифта
-    try:
-        font_zodiac = ImageFont.truetype("EFCO Brookshire Regular.ttf", 250)  # Верхний шрифт 250px
-        font_date = ImageFont.truetype("EFCO Brookshire Regular.ttf", 200)  # Нижний шрифт 200px
-    except IOError:
-        font_zodiac = ImageFont.load_default()
-        font_date = ImageFont.load_default()
+    # Получаем размеры изображения
+    W, H = image.size
 
-    # Цвет обводки, цвет текста и цвет тени
+    # Функция для подбора оптимального размера шрифта
+    def get_optimal_font_size(text, max_width, max_height):
+        font_size = 10  # Начальный размер шрифта
+        font = None
+        text_width = 0
+        text_height = 0
+        
+        # Увеличиваем размер шрифта, пока текст не станет слишком большим
+        while True:
+            try:
+                font = ImageFont.truetype("GreatVibes-Regular.ttf", font_size)
+            except IOError:
+                font = ImageFont.load_default()
+                
+            text_width, text_height = draw.textsize(text, font=font)
+            
+            # Оставляем небольшой отступ от краев (80% от размера изображения)
+            if text_width > max_width * 0.8 or text_height > max_height * 0.8:
+                font_size -= 10  # Возвращаемся к последнему подходящему размеру
+                try:
+                    font = ImageFont.truetype("GreatVibes-Regular.ttf", font_size)
+                except IOError:
+                    font = ImageFont.load_default()
+                break
+                
+            font_size += 10
+            
+        return font, text_width, text_height
+
+    # Получаем оптимальный размер шрифта
+    font, text_width, text_height = get_optimal_font_size(text, W, H)
+
+    # Цвета
     stroke_color = "#a3716f"
     text_color = "white"
     shadow_color = "black"
 
-    # Создаем изображение для тени и основной текст
     def draw_text_with_blurred_shadow(draw, text, position, font, shadow_offset, shadow_color, text_color, stroke_width, stroke_fill):
         x, y = position
 
@@ -54,22 +79,18 @@ def overlay_text():
         # Рисуем основной текст поверх размытой тени
         draw.text(position, text, font=font, fill=text_color, stroke_width=stroke_width, stroke_fill=stroke_fill)
 
-    # Получение размера изображения для центрирования текста
-    W, H = image.size
+    # Вычисляем позицию для центрирования текста
+    text_position = ((W - text_width) / 2, (H - text_height) / 2)
 
-    # Позиции для знака зодиака и даты
-    zodiac_w, zodiac_h = draw.textsize(text, font=font_zodiac)
-    date_w, date_h = draw.textsize(date, font=font_date)
-
-    # Ещё меньший отступ сверху для знака зодиака (например, 2 пикселя)
-    zodiac_position = ((W - zodiac_w) / 2, 2)
-    date_position = ((W - date_w) / 2, H - date_h - 50)
-
-    # Рисуем знак зодиака с размытой тенью
-    draw_text_with_blurred_shadow(draw, text, zodiac_position, font_zodiac, shadow_offset=7, shadow_color=shadow_color, text_color=text_color, stroke_width=7, stroke_fill=stroke_color)
-
-    # Рисуем дату с размытой тенью
-    draw_text_with_blurred_shadow(draw, date, date_position, font_date, shadow_offset=7, shadow_color=shadow_color, text_color=text_color, stroke_width=7, stroke_fill=stroke_color)
+    # Рисуем текст с тенью
+    draw_text_with_blurred_shadow(
+        draw, text, text_position, font,
+        shadow_offset=7,
+        shadow_color=shadow_color,
+        text_color=text_color,
+        stroke_width=7,
+        stroke_fill=stroke_color
+    )
 
     # Сохранение результата во временный файл
     img_io = io.BytesIO()
