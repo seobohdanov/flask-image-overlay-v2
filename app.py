@@ -3,7 +3,6 @@ import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import math
-from colorsys import hsv_to_rgb
 
 app = Flask(__name__)
 
@@ -47,93 +46,75 @@ def overlay_text():
             
             font_size += 10
 
-    def create_metallic_gradient(size, angle=45):
-        """Создает градиент металлического блеска"""
-        gradient = Image.new('RGBA', size)
-        draw = ImageDraw.Draw(gradient)
-        
-        for y in range(size[1]):
-            for x in range(size[0]):
-                # Создаем волнообразный паттерн
-                wave = math.sin(x/20.0 + y/20.0) * 0.3 + 0.7
-                # Добавляем угловой градиент
-                angle_factor = (x * math.cos(math.radians(angle)) + 
-                              y * math.sin(math.radians(angle))) / (size[0] + size[1])
-                
-                # Конвертируем HSV в RGB для получения золотого оттенка
-                hue = 0.13 + angle_factor * 0.02  # Золотой оттенок
-                saturation = 0.8 + wave * 0.2
-                value = 0.6 + wave * 0.4
-                
-                rgb = hsv_to_rgb(hue, saturation, value)
-                color = (
-                    int(rgb[0] * 255),
-                    int(rgb[1] * 255),
-                    int(rgb[2] * 255),
-                    180  # Полупрозрачность
-                )
-                draw.point((x, y), color)
-        
-        return gradient
-
-    def apply_metallic_effect(draw, text, position, font):
+    def create_metallic_text(draw, text, position, font):
         x, y = position
         
-        # 1. Базовое тиснение
-        for depth in range(8, 0, -1):
-            press_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-            press_draw = ImageDraw.Draw(press_layer)
-            press_draw.text(
-                (x + depth*0.5, y + depth*0.5),
+        # Цвета для металлического эффекта
+        colors = [
+            (139, 117, 0, 255),    # Темное золото
+            (255, 215, 0, 255),    # Чистое золото
+            (218, 165, 32, 255),   # Золотисто-коричневый
+            (255, 223, 0, 255),    # Яркое золото
+            (207, 181, 59, 255),   # Античное золото
+        ]
+        
+        # 1. Создаем эффект вдавленности
+        for depth in range(6):
+            offset = depth * 0.8
+            shadow_color = (0, 0, 0, 50 - depth * 8)
+            draw.text(
+                (x + offset, y + offset),
                 text,
                 font=font,
-                fill=(0, 0, 0, 20 + depth * 4)
+                fill=shadow_color
             )
-            press_blur = press_layer.filter(ImageFilter.GaussianBlur(depth))
-            image.paste(press_blur, (0, 0), press_blur)
 
-        # 2. Создаем маску текста
-        text_mask = Image.new('L', image.size, 0)
-        mask_draw = ImageDraw.Draw(text_mask)
-        mask_draw.text((x, y), text, font=font, fill=255)
-
-        # 3. Создаем металлический градиент
-        metallic = create_metallic_gradient(image.size)
-
-        # 4. Накладываем градиент через маску
-        image.paste(metallic, (0, 0), text_mask)
-
-        # 5. Добавляем блики
-        angles = [30, 45, 60]  # Разные углы для бликов
-        for angle in angles:
-            highlight_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-            highlight_draw = ImageDraw.Draw(highlight_layer)
+        # 2. Добавляем металлические слои
+        for i, color in enumerate(colors):
+            angle = math.pi * 2 * i / len(colors)
+            offset_x = math.cos(angle) * 1.2
+            offset_y = math.sin(angle) * 1.2
             
-            # Вычисляем смещение для блика
-            offset_x = math.cos(math.radians(angle)) * 2
-            offset_y = math.sin(math.radians(angle)) * 2
+            # Создаем отдельный слой для каждого цвета
+            layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            layer_draw = ImageDraw.Draw(layer)
+            
+            layer_draw.text(
+                (x + offset_x, y + offset_y),
+                text,
+                font=font,
+                fill=color
+            )
+            
+            # Небольшое размытие для сглаживания
+            layer = layer.filter(ImageFilter.GaussianBlur(0.5))
+            image.paste(layer, (0, 0), layer)
+
+        # 3. Добавляем яркие блики
+        highlight_positions = [
+            (-1.5, -1.5, 40),   # Верхний левый блик
+            (1.5, -1.5, 40),    # Верхний правый блик
+            (0, 0, 60),         # Центральный блик
+            (-0.8, -0.8, 50),   # Дополнительный блик
+        ]
+        
+        for offset_x, offset_y, opacity in highlight_positions:
+            highlight = Image.new('RGBA', image.size, (0, 0, 0, 0))
+            highlight_draw = ImageDraw.Draw(highlight)
             
             highlight_draw.text(
                 (x + offset_x, y + offset_y),
                 text,
                 font=font,
-                fill=(255, 255, 220, 30)
+                fill=(255, 255, 220, opacity)
             )
             
-            # Размываем блик
-            highlight_blur = highlight_layer.filter(ImageFilter.GaussianBlur(1))
-            image.paste(highlight_blur, (0, 0), highlight_mask=text_mask)
+            highlight = highlight.filter(ImageFilter.GaussianBlur(0.8))
+            image.paste(highlight, (0, 0), highlight)
 
-        # 6. Добавляем финальные штрихи
-        final_layer = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        final_draw = ImageDraw.Draw(final_layer)
-        final_draw.text(
-            (x, y),
-            text,
-            font=font,
-            fill=(255, 223, 0, 100)  # Полупрозрачный золотой
-        )
-        image.paste(final_layer, (0, 0), final_layer)
+        # 4. Добавляем финальный слой текста
+        final_color = (255, 215, 0, 180)
+        draw.text((x, y), text, font=font, fill=final_color)
 
     # Вычисляем размеры и позицию
     frame_width = W * 0.6
@@ -143,7 +124,7 @@ def overlay_text():
     y = (H - text_height) / 2
 
     # Применяем эффекты
-    apply_metallic_effect(draw, text, (x, y), font)
+    create_metallic_text(draw, text, (x, y), font)
 
     # Сохраняем результат
     img_io = io.BytesIO()
