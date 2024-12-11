@@ -13,7 +13,7 @@ def overlay_text():
     # Загрузка изображения по URL
     if image_url:
         response = requests.get(image_url)
-        image = Image.open(io.BytysIO(response.content))
+        image = Image.open(io.BytesIO(response.content))  # Исправлено BytysIO на BytesIO
     else:
         file = request.files['image']
         image = Image.open(file)
